@@ -1,0 +1,68 @@
+comment = _{ ";" ~ (!"\n" ~ any)* }
+whitespace = _{ (" " | "\t" | "\r" | "\n") }
+
+digit = _{'0'..'9'}
+char = {'a'..'z' | 'A'..'Z' | '0'..'9' | "_" | "-"}
+ident = { char+ }
+
+char_literal = @{"'" ~ any ~ "'"}
+hex_literal = @{"x" ~ ('a'..'f' | 'A'..'F' | '0'..'9'){1, 4}}
+int_literal = @{ digit+ }
+label_ref = @{":" ~ ident}
+
+reg_ref = @{"$" ~ ('0'..'7')}
+param = _{char_literal | hex_literal | int_literal | label_ref | reg_ref}
+
+ins_halt = {"halt"}
+ins_set = {"set" ~ reg_ref ~ param}
+ins_push = {"push" ~ param}
+ins_pop = {"pop" ~ reg_ref}
+ins_eq = {"eq" ~ reg_ref ~ param ~ param}
+ins_gt = {"gt" ~ reg_ref ~ param ~ param}
+ins_jmp = {"jmp" ~ param}
+ins_jt = {"jt" ~ param ~ param}
+ins_jf = {"jf" ~ param ~ param}
+ins_add = {"add" ~ reg_ref ~ param ~ param}
+ins_mult = {"mult" ~ reg_ref ~ param ~ param}
+ins_mod = {"mod" ~ reg_ref ~ param ~ param}
+ins_and = {"and" ~ reg_ref ~ param ~ param}
+ins_or = {"or" ~ reg_ref ~ param ~ param}
+ins_not = {"not" ~ reg_ref ~ param}
+ins_rmem = {"rmem" ~ reg_ref ~ param}
+ins_wmem = {"wmem" ~ param ~ param}
+ins_call = {"call" ~ param}
+ins_ret = {"ret"}
+ins_out = {"out" ~ param}
+ins_in = {"in" ~ reg_ref}
+ins_noop = {"noop"}
+ins_dmp = {"dmp"}
+
+instruction = {
+    ins_halt |
+    ins_set |
+    ins_push |
+    ins_pop |
+    ins_eq |
+    ins_gt |
+    ins_jmp |
+    ins_jt |
+    ins_jf |
+    ins_add |
+    ins_mult |
+    ins_mod |
+    ins_and |
+    ins_or |
+    ins_not |
+    ins_rmem |
+    ins_wmem |
+    ins_call |
+    ins_ret |
+    ins_out |
+    ins_in |
+    ins_noop |
+    ins_dmp
+}
+
+label_def = @{ident ~ ":"}
+element = _{label_def | instruction}
+main = _{(element)* ~ eoi}

@@ -1,0 +1,18 @@
+[package]
+name = "rustacor"
+version = "0.1.0"
+authors = ["Ske <voltasalt@gmail.com>"]
+
+[dependencies]
+byteorder = "1"
+clap = "2.29.0"
+pest = "^1.0.0-beta"
+pest_derive = "^1.0.0-beta"
+
+[[bin]]
+name = "synasm"
+path = "src/bin/synasm.rs"
+
+[[bin]]
+name = "synvm"
+path = "src/bin/synvm.rs"

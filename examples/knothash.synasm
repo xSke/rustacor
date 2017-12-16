@@ -1,0 +1,249 @@
+; KNOTHASH SYNACOR VM ASM
+; STORES MAIN STATE IN 0x4000-0x40ff
+; STORES DENSE HASH IN 0x4100-0x410f
+; STORES INPUT LENGTH IN 0x4fff
+; STORES INPUTS IN 0x5000-whatever
+; STORES HEX CONVERSION TABLE IN 0x6000-0x60ff
+
+jmp :main
+
+; sub xor($2, $3) -> $2
+; Trashes $6 and $7
+xor:
+    ; $6 = x & ~y
+    not $6 $3
+    and $6 $2 $6
+
+    ; $7 = ~x & y
+    not $7 $2
+    and $7 $7 $3
+
+    ; $0 = $6 | $7
+    or $2 $6 $7
+    ret
+
+; sub init
+; Sets 0x4000 to 0x40ff to numbers 0 through 255
+; Trashes $6 and $7
+init:
+    set $6 0            ; Init counter
+init_loop:
+    add $7 $6 x4000     ; Calculate the offset for writing
+    wmem $7 $6          ; Write the counter to memory
+    add $6 $6 1         ; Increment the counter
+    gt $7 $6 255        ; Loop if counter <= 255
+    jf $7 :init_loop
+    ret
+
+; sub swap($0, $1)
+; Swaps memory locations $0 and $1
+; Trashes $6, $7
+swap:
+    rmem $7 $0
+    rmem $6 $1
+    wmem $0 $6
+    wmem $1 $7
+    ret
+
+; sub rev($0: pos, $1: len)
+; Trashes $2 - $7
+; Rough C equivalent:
+;
+; int a = len;
+; int b = 0;
+; while (1) {
+;    b++;
+;    a--;
+;
+;    int ia = (offset + a) % 256;
+;    int ib = (offset + b) % 256;
+;
+;    int x = mem[ia];
+;    int y = mem[ib];
+;    mem[ia] = y;
+;    mem[ib] = x;
+;
+;    if (!(a > b)) break;
+; }
+;
+rev:
+    set $6 $1 ; Init counters,.]
+    set $7 0
+rev_loop:
+    add $4 $0 $6 ; Calculate idx of swap from
+    mod $4 $4 256
+
+    add $5 $0 $7 ; Calculate idx of swap to
+    mod $5 $5 256
+
+    add $4 $4 x4000 ; Add array offset
+    add $5 $5 x4000
+
+    rmem $2 $4 ; Execute swap
+    rmem $3 $5
+    wmem $5 $2
+    wmem $4 $3
+
+    add $7 $7 1 ; Update counters
+    add $6 $6 32767
+
+    gt $5 $6 $7 ; Handle loop
+    jt $5 :rev_loop
+
+    ret
+
+
+; sub kh_round (position in $0, skip in $1)
+; Trashes all registers
+kh_round:
+    set $6 0        ; Input index
+kh_loop:
+    mod $0 $0 256   ; Make sure pos is within bounds
+
+    add $1 $6 x5000 ; Read the input (the length)
+    rmem $1 $1
+
+    add $1 $1 32767 ; Subtract one, for the rev function
+
+    push $6         ; Save state - rev trashes $2-$7 and we need 6 and 7
+    push $7
+    call :rev ; Call reverse function with (pos, len-1)
+    pop $7
+    pop $6
+
+    add $0 $0 $1 ; Add length register to position
+    add $0 $0 1 ; Add one to position (since we subtracted from length register before)
+
+    add $0 $0 $7 ; Add skip size to position
+    add $7 $7 1 ; Increment skip size
+
+    add $6 $6 1 ; Increment input index
+    rmem $2 x4fff ; Read length of input
+    ; add $2 $2 32767 ; Subtract one, for the comparison
+    eq $2 $6 $2 ; If (idx+1) == len, then break out of the loop
+    jf $2 :kh_loop ; If not, loop back
+    ret
+
+; sub read_input
+; Trashes $0 through $3
+read_input:
+    set $0 0        ; Init counter
+read_input_loop:
+    in $1           ; Read a char
+    eq $2 $1 10     ; If char is a newline
+    jt $2 :read_input_done  ; Go to end
+    add $3 $0 x5000 ; Else, find the memory offset
+    wmem $3 $1      ; Write the char ther
+    add $0 $0 1     ; And increment the counter
+    jmp :read_input_loop    ; ..loop again
+read_input_done:
+    wmem x4fff $0   ; Write the length to x4fff
+    ret
+
+reduce_hash:
+    set $0 0
+reduce_hash_loop:
+    set $1 0
+reduce_hash_loop_2:
+    mult $2 $0 16   ; Read value from sparse hash
+    add $2 $2 $1
+    add $2 $2 x4000
+    rmem $2 $2
+
+    add $4 $0 x4100 ; Read value from dense hash
+    rmem $3 $4
+
+    call :xor   ; Xor $2 and $3 into $2
+    wmem $4 $2  ; Write back to memory
+
+    add $1 $1 1
+    eq $7 $1 16
+    jf $7 :reduce_hash_loop_2
+
+    add $0 $0 1
+    eq $7 $0 16
+    jf $7 :reduce_hash_loop
+    ret
+
+; sub build_hash_table
+; Builds a table that can look up both lowest 4 and highest 4
+; Trashes $0, $1, $2
+build_hash_table:
+    set $0 0        ; Init counter
+build_hash_table_loop:
+    add $1 $0 48    ; Add 48 ('0')
+    gt $2 $0 9      ; If counter > 9...
+    jf $2 :build_hash_table_not_hex
+    add $1 $1 39    ; ...add 39 more (so value 0xa = 'a'
+build_hash_table_not_hex:
+    add $2 $0 x6000 ; Find memory location for lowest 4
+    wmem $2 $1      ; And write
+
+    mult $2 $0 16
+    add $2 $2 x6000 ; Find memory location for highest 4 ($0 * 16)
+    wmem $2 $1      ; And write, again
+
+    add $0 $0 1     ; Loop until 16
+    eq $1 $0 16
+    jf $1 :build_hash_table_loop
+
+    ret
+
+print_hash:
+    call :build_hash_table
+    set $0 0
+print_hash_loop:
+    add $1 x4100 $0
+    rmem $1 $1      ; Read dense hash value
+
+    and $2 $1 xf0   ; Find highest 4 of byte
+    add $2 $2 x6000 ; Read highest 4 from table
+    rmem $2 $2
+    out $2          ; Print
+
+    and $2 $1 xf   ; Find lowest 4 of byte
+    add $2 $2 x6000 ; Read lowest 4 from table
+    rmem $2 $2
+    out $2          ; Print
+
+    add $0 $0 1     ; Loop until 16
+    eq $1 $0 16
+    jf $1 :print_hash_loop
+    ret
+
+main:
+    call :init          ; Init kh state
+    call :read_input    ; Read input
+
+    rmem $0 x4fff       ; Read the length of the input
+    add $0 $0 x5000     ; Find beginning offset
+    wmem $0 17          ; Add the padding bytes
+    add $0 $0 1
+    wmem $0 31
+    add $0 $0 1
+    wmem $0 73
+    add $0 $0 1
+    wmem $0 47
+    add $0 $0 1
+    wmem $0 23
+    add $0 $0 1
+
+    rmem $0 x4fff       ; Fix the length memory location
+    add $0 $0 5
+    wmem x4fff $0
+
+    set $0 0            ; Init variables for KH round
+    set $7 0
+    set $1 0            ; Counter for the 64 rounds
+
+main_loop:
+    push $1             ; Push state (not pushing $0 and $7 cause they're just mutated state)
+    call :kh_round
+    pop $1
+
+    add $1 $1 1     ; Increment counter
+    eq $2 $1 64     ; If not == 64, loop back
+    jf $2 :main_loop
+
+    call :reduce_hash   ; Reduce the hash
+    call :print_hash    ; And of course print it
