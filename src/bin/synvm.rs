@@ -39,7 +39,7 @@ fn run() -> Result<(), String> {
         let mut out = Vec::new();
         assembler::assemble(&mut out, &s).map_err(|e| format!("While assembling code: {}", match e {
             assembler::AssemblerError::LabelResolveError(ref s) => format!("Unknown label :{}", s),
-            assembler::AssemblerError::ParserError(line, char) => format!("Syntax error at (line {}, char {})", line, char)
+            assembler::AssemblerError::ParserError(e) => format!("\n{}", e)
         }))?;
 
         let mut slc: &[u8] = &mut out;

@@ -90,12 +90,12 @@ fn write_program(out: &mut Write, prg: &Vec<ProgramElement>) {
 
 #[derive(Debug)]
 pub enum AssemblerError {
-    ParserError(usize, usize),
+    ParserError(String),
     LabelResolveError(String)
 }
 
 pub fn assemble(out: &mut Write, src: &str) -> Result<(), AssemblerError> {
-    let mut res = ::parser::parse(src).map_err(|(line, col)| AssemblerError::ParserError(line, col))?;
+    let mut res = ::parser::parse(src).map_err(|e| AssemblerError::ParserError(e.to_string()))?;
     let labels = locate_labels(&res);
     reify_labels(&mut res, &labels).map_err(|x| AssemblerError::LabelResolveError(x))?;
     write_program(out, &res);

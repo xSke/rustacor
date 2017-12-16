@@ -1,0 +1,87 @@
+jmp :main
+
+; Prints an integer in $0
+print_integer:
+    ; We use $0 as an accumulator, repeatedly dividing by ten to get each next digit
+    ; We use $1 and $2 as scratch space
+    ; We use $3 for storing the amount of digits, so we know how many to pop
+    
+    push $0         ; Save the registers we touch to the stack for cleanup
+    push $1
+    push $2
+    push $3
+
+    set $3 0
+
+print_integer_loop:
+    mod $1 $0 10    ; Find the lowest digit of $0 (345 -> 5)
+    
+    add $2 $1 '0'   ; Push the digit to the stack
+    push $2         ; This is because we start with the lowest digit, so we use the stack to "reverse" the order
+    add $3 $3 1     ; Remember to add to $3, which stores how many digits we've pushed
+
+    gt $2 $0 9      ; Check if $0 is greater than 9
+    jf $2 :print_integer_done   ; If it's not (ie. a single digit which we just printed), great, we're done
+
+    ; If not, divide $0 by ten and loop back
+    ; Turns out dividing something by ten without a division instruction is hard.
+    ; We use a loop instead, repeatedly adding to a variable until 10*it >= $0
+
+    set $1 0        ; Initialize our counter to zero
+print_integer_division_loop:
+    add $1 $1 1     ; Increment the counter once
+    mult $2 $1 10   ; While the counter multiplied by ten is less than to $0...
+    gt $2 $2 $0     ; (note: (a > b) == (b <= a))
+    jf $2 :print_integer_division_loop ; Jump back around
+
+    ; If not, then we're done dividing and the next value is in $1
+    add $1 $1 32767 ; Since we looped until we went *over* the value, subtract one (note, adding 32767 is the same as subtracting one)
+    set $0 $1       ; Update $0 to the newly divided value for the next round
+    jmp :print_integer_loop
+
+print_integer_done:
+    ; Now that we're done, we just need to pop from the stack and print
+    ; $3 stores how many digits we've pushed, so pop that many times
+    set $1 0
+print_integer_pop_loop:
+    pop $2      ; Pop the character and print it
+    out $2
+    add $1 $1 1 ; Increment our counter
+    eq $2 $1 $3 ; If counter != total, loop back
+    jf $2 :print_integer_pop_loop
+
+    pop $3      ; Pop registers back from stack for caller
+    pop $2
+    pop $1
+    pop $0
+    ret
+
+main:
+    ; Use $1 and $2 for a and b
+    set $1 0
+    set $2 1
+
+    ; Print first two values just because
+    out '0' 
+    out 10
+    out '1'
+    out 10
+
+main_loop:
+    add $3 $1 $2    ; Add a and b to scratch reg
+    set $1 $2       ; Shift over
+    set $2 $3
+
+    ; This arch only has 15-bit variables, so we detect overflow and stop
+    gt $3 $1 $2
+    jt $3 :halt
+
+    set $0 $2       ; Print b, print_integer takes input in $0 so set that
+    call :print_integer
+    out 10          ; Print newline
+
+
+    jmp :main_loop   ; Loop
+
+halt:
+    halt
